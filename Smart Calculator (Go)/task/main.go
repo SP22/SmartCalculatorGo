@@ -19,28 +19,25 @@ func main() {
 			break
 		}
 
+		if input == "/help" {
+			fmt.Println("The program calculates the sum of numbers")
+			continue
+		}
+
 		if input == "" {
 			continue
 		}
 
 		parts := strings.Fields(input)
-		if len(parts) == 1 {
-			num, err := strconv.Atoi(parts[0])
+		sum := 0
+		for _, part := range parts {
+			num, err := strconv.Atoi(part)
 			if err != nil {
 				fmt.Println("Invalid input")
 				continue
 			}
-			fmt.Println(num)
-		} else if len(parts) == 2 {
-			num1, err1 := strconv.Atoi(parts[0])
-			num2, err2 := strconv.Atoi(parts[1])
-			if err1 != nil || err2 != nil {
-				fmt.Println("Invalid input")
-				continue
-			}
-			fmt.Println(num1 + num2)
-		} else {
-			fmt.Println("Invalid input")
+			sum += num
 		}
+		fmt.Println(sum)
 	}
 }
