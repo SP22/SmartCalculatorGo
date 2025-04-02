@@ -9,9 +9,12 @@ import (
 	"strings"
 )
 
+var variables = make(map[string]int)
+
 func showHelp() {
 	fmt.Println("The program calculates the sum and difference of numbers.")
 	fmt.Println("It supports multiple operators (+ and -), including unary minus and repeated operators.")
+	fmt.Println("You can store values in variables and use them in calculations.")
 }
 
 func normalizeOperators(expression string) string {
@@ -25,42 +28,74 @@ func normalizeOperators(expression string) string {
 	})
 }
 
-func isValidExpression(expression string) bool {
-	re := regexp.MustCompile(`^[-+]?\d+(\s*[-+]\s*\d+)*`)
-	return re.MatchString(expression)
+func isValidIdentifier(identifier string) bool {
+	re := regexp.MustCompile(`^[a-zA-Z]+$`)
+	return re.MatchString(identifier)
 }
 
-func calculateExpression(expression string) (int, error) {
+func isValidAssignment(input string) bool {
+	parts := strings.SplitN(input, "=", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	return isValidIdentifier(strings.TrimSpace(parts[0]))
+}
+
+func evaluateExpression(expression string) (int, error) {
 	expression = normalizeOperators(expression)
 	parts := strings.Fields(expression)
 	if len(parts) == 0 {
 		return 0, fmt.Errorf("invalid expression")
 	}
 
-	result, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, fmt.Errorf("invalid expression")
+	var stack []int
+	var lastOp rune = '+'
+
+	for _, part := range parts {
+		if num, err := strconv.Atoi(part); err == nil {
+			if lastOp == '+' {
+				stack = append(stack, num)
+			} else {
+				stack = append(stack, -num)
+			}
+		} else if val, exists := variables[part]; exists {
+			if lastOp == '+' {
+				stack = append(stack, val)
+			} else {
+				stack = append(stack, -val)
+			}
+		} else if part == "+" || part == "-" {
+			lastOp = rune(part[0])
+		} else {
+			return 0, fmt.Errorf("invalid expression")
+		}
 	}
 
-	for i := 1; i < len(parts); i += 2 {
-		if i+1 >= len(parts) {
-			return 0, fmt.Errorf("invalid expression")
-		}
-		operator := parts[i]
-		num, err := strconv.Atoi(parts[i+1])
-		if err != nil {
-			return 0, fmt.Errorf("invalid expression")
-		}
-		switch operator {
-		case "+":
-			result += num
-		case "-":
-			result -= num
-		default:
-			return 0, fmt.Errorf("invalid expression")
-		}
+	result := 0
+	for _, num := range stack {
+		result += num
 	}
+
 	return result, nil
+}
+
+func handleAssignment(input string) {
+	parts := strings.SplitN(input, "=", 2)
+	name := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+
+	if !isValidIdentifier(name) {
+		fmt.Println("Invalid identifier")
+		return
+	}
+
+	if num, err := strconv.Atoi(value); err == nil {
+		variables[name] = num
+	} else if val, exists := variables[value]; exists {
+		variables[name] = val
+	} else {
+		fmt.Println("Invalid assignment")
+	}
 }
 
 func main() {
@@ -86,12 +121,25 @@ func main() {
 			continue
 		}
 
-		if !isValidExpression(input) {
-			fmt.Println("Invalid expression")
+		if strings.Contains(input, "=") {
+			if !isValidAssignment(input) {
+				fmt.Println("Invalid assignment")
+			} else {
+				handleAssignment(input)
+			}
 			continue
 		}
 
-		result, err := calculateExpression(input)
+		if isValidIdentifier(input) {
+			if val, exists := variables[input]; exists {
+				fmt.Println(val)
+			} else {
+				fmt.Println("Unknown variable")
+			}
+			continue
+		}
+
+		result, err := evaluateExpression(input)
 		if err != nil {
 			fmt.Println("Invalid expression")
 		} else {
