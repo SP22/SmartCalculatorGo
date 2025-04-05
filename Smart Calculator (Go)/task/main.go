@@ -12,9 +12,11 @@ import (
 var variables = make(map[string]int)
 
 func showHelp() {
-	fmt.Println("The program calculates the sum and difference of numbers.")
-	fmt.Println("It supports multiple operators (+ and -), including unary minus and repeated operators.")
-	fmt.Println("You can store values in variables and use them in calculations.")
+	fmt.Println("The program supports the following features:")
+	fmt.Println("- Addition (+), Subtraction (-), Multiplication (*), Integer Division (/), and Power (^)")
+	fmt.Println("- Support for parentheses to alter precedence")
+	fmt.Println("- Repeated operators like --- or +++")
+	fmt.Println("- Variable assignment and usage")
 }
 
 func normalizeOperators(expression string) string {
@@ -34,49 +36,130 @@ func isValidIdentifier(identifier string) bool {
 }
 
 func isValidAssignment(input string) bool {
-	parts := strings.SplitN(input, "=", 2)
-	if len(parts) != 2 {
-		return false
-	}
-	return isValidIdentifier(strings.TrimSpace(parts[0]))
+	return strings.Count(input, "=") == 1
 }
 
-func evaluateExpression(expression string) (int, error) {
-	expression = normalizeOperators(expression)
-	parts := strings.Fields(expression)
-	if len(parts) == 0 {
-		return 0, fmt.Errorf("invalid expression")
+func precedence(op string) int {
+	switch op {
+	case "^":
+		return 3
+	case "*", "/":
+		return 2
+	case "+", "-":
+		return 1
+	default:
+		return 0
 	}
+}
 
-	var stack []int
-	var lastOp rune = '+'
+func toPostfix(tokens []string) ([]string, error) {
+	var output []string
+	var stack []string
 
-	for _, part := range parts {
-		if num, err := strconv.Atoi(part); err == nil {
-			if lastOp == '+' {
-				stack = append(stack, num)
-			} else {
-				stack = append(stack, -num)
+	for _, token := range tokens {
+		switch {
+		case isValidIdentifier(token) || isNumber(token):
+			output = append(output, token)
+		case token == "(":
+			stack = append(stack, token)
+		case token == ")":
+			for len(stack) > 0 && stack[len(stack)-1] != "(" {
+				output = append(output, stack[len(stack)-1])
+				stack = stack[:len(stack)-1]
 			}
-		} else if val, exists := variables[part]; exists {
-			if lastOp == '+' {
-				stack = append(stack, val)
-			} else {
-				stack = append(stack, -val)
+			if len(stack) == 0 || stack[len(stack)-1] != "(" {
+				return nil, fmt.Errorf("Invalid expression")
 			}
-		} else if part == "+" || part == "-" {
-			lastOp = rune(part[0])
-		} else {
-			return 0, fmt.Errorf("invalid expression")
+			stack = stack[:len(stack)-1] // pop '('
+		case strings.Contains("+-*/^", token):
+			for len(stack) > 0 && precedence(token) <= precedence(stack[len(stack)-1]) {
+				if stack[len(stack)-1] == "(" {
+					break
+				}
+				output = append(output, stack[len(stack)-1])
+				stack = stack[:len(stack)-1]
+			}
+			stack = append(stack, token)
+		default:
+			return nil, fmt.Errorf("Invalid expression")
 		}
 	}
 
-	result := 0
-	for _, num := range stack {
-		result += num
+	for len(stack) > 0 {
+		if stack[len(stack)-1] == "(" {
+			return nil, fmt.Errorf("Invalid expression")
+		}
+		output = append(output, stack[len(stack)-1])
+		stack = stack[:len(stack)-1]
 	}
 
-	return result, nil
+	return output, nil
+}
+
+func evalPostfix(postfix []string) (int, error) {
+	var stack []int
+	for _, token := range postfix {
+		if isNumber(token) {
+			num, _ := strconv.Atoi(token)
+			stack = append(stack, num)
+		} else if isValidIdentifier(token) {
+			val, ok := variables[token]
+			if !ok {
+				return 0, fmt.Errorf("Unknown variable")
+			}
+			stack = append(stack, val)
+		} else if strings.Contains("+-*/^", token) {
+			if len(stack) < 2 {
+				return 0, fmt.Errorf("Invalid expression")
+			}
+			right := stack[len(stack)-1]
+			left := stack[len(stack)-2]
+			stack = stack[:len(stack)-2]
+			var result int
+			switch token {
+			case "+":
+				result = left + right
+			case "-":
+				result = left - right
+			case "*":
+				result = left * right
+			case "/":
+				if right == 0 {
+					return 0, fmt.Errorf("Division by zero")
+				}
+				result = left / right
+			case "^":
+				result = 1
+				for i := 0; i < right; i++ {
+					result *= left
+				}
+			}
+			stack = append(stack, result)
+		} else {
+			return 0, fmt.Errorf("Invalid expression")
+		}
+	}
+	if len(stack) != 1 {
+		return 0, fmt.Errorf("Invalid expression")
+	}
+	return stack[0], nil
+}
+
+func isNumber(token string) bool {
+	_, err := strconv.Atoi(token)
+	return err == nil
+}
+
+func tokenize(expression string) ([]string, error) {
+	expression = normalizeOperators(expression)
+	re := regexp.MustCompile(`\d+|[a-zA-Z]+|[()+\-*/^]`)
+	tokens := re.FindAllString(expression, -1)
+	for _, token := range tokens {
+		if strings.Count(token, "*") > 1 || strings.Count(token, "/") > 1 {
+			return nil, fmt.Errorf("Invalid expression")
+		}
+	}
+	return tokens, nil
 }
 
 func handleAssignment(input string) {
@@ -93,6 +176,8 @@ func handleAssignment(input string) {
 		variables[name] = num
 	} else if val, exists := variables[value]; exists {
 		variables[name] = val
+	} else if isValidIdentifier(value) {
+		fmt.Println("Unknown variable")
 	} else {
 		fmt.Println("Invalid assignment")
 	}
@@ -139,7 +224,17 @@ func main() {
 			continue
 		}
 
-		result, err := evaluateExpression(input)
+		tokens, err := tokenize(input)
+		if err != nil {
+			fmt.Println("Invalid expression")
+			continue
+		}
+		postfix, err := toPostfix(tokens)
+		if err != nil {
+			fmt.Println("Invalid expression")
+			continue
+		}
+		result, err := evalPostfix(postfix)
 		if err != nil {
 			fmt.Println("Invalid expression")
 		} else {
